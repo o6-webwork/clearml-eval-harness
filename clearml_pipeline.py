@@ -603,9 +603,10 @@ def build_and_run(
 
     # Set ORCH_DIR so step functions know where batch_translate.py lives
     pipe.add_parameter("orch_dir", HERE)
-    # Persist the models list so the pipeline controller can restore it when
-    # re-executed by the remote agent (where hf_cache won't exist).
+    # Persist CLI args that aren't otherwise recoverable on remote re-execution
+    # (argparse sees its defaults, not the original flags, when run by the agent).
     pipe.add_parameter("models_csv", ",".join(models))
+    pipe.add_parameter("metrics_csv", ",".join(sorted(metrics)))
 
     # --- Translate steps (one per model) ---
     # Skipped entirely when --translation-dataset is supplied (score-only mode).
@@ -752,13 +753,17 @@ def main() -> None:
         sys.exit(1)
 
     # When clearml-agent re-executes the pipeline controller on a remote worker,
-    # CLEARML_TASK_ID is set but hf_cache won't exist in the agent's task clone.
-    # Retrieve the models list from the stored pipeline parameter instead.
+    # CLEARML_TASK_ID is set but hf_cache won't exist in the agent's task clone
+    # and argparse sees its defaults instead of the original CLI flags.
+    # Restore both from the stored pipeline parameters.
     if os.environ.get("CLEARML_TASK_ID"):
         from clearml import Task as _Task
         _task = _Task.current_task()
-        _csv = (_task.get_parameter("pipeline/models_csv") or "") if _task else ""
-        models = [m.strip() for m in _csv.split(",") if m.strip()]
+        _get = lambda k: (_task.get_parameter(f"pipeline/{k}") or "") if _task else ""
+        models = [m.strip() for m in _get("models_csv").split(",") if m.strip()]
+        _metrics_csv = _get("metrics_csv")
+        if _metrics_csv:
+            raw_metrics = {m.strip().lower() for m in _metrics_csv.split(",") if m.strip()}
     else:
         models = discover_models()
         if not models and not args.translation_dataset and not args.translations_dir:
