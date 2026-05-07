@@ -603,6 +603,9 @@ def build_and_run(
 
     # Set ORCH_DIR so step functions know where batch_translate.py lives
     pipe.add_parameter("orch_dir", HERE)
+    # Persist the models list so the pipeline controller can restore it when
+    # re-executed by the remote agent (where hf_cache won't exist).
+    pipe.add_parameter("models_csv", ",".join(models))
 
     # --- Translate steps (one per model) ---
     # Skipped entirely when --translation-dataset is supplied (score-only mode).
@@ -748,10 +751,19 @@ def main() -> None:
               "with --local. Add --local or use --translation-dataset for distributed runs.")
         sys.exit(1)
 
-    models = discover_models()
-    if not models and not args.translation_dataset and not args.translations_dir:
-        print("No models discovered. Set MODELS env var or populate hf_cache/hub/.")
-        sys.exit(1)
+    # When clearml-agent re-executes the pipeline controller on a remote worker,
+    # CLEARML_TASK_ID is set but hf_cache won't exist in the agent's task clone.
+    # Retrieve the models list from the stored pipeline parameter instead.
+    if os.environ.get("CLEARML_TASK_ID"):
+        from clearml import Task as _Task
+        _task = _Task.current_task()
+        _csv = (_task.get_parameter("pipeline/models_csv") or "") if _task else ""
+        models = [m.strip() for m in _csv.split(",") if m.strip()]
+    else:
+        models = discover_models()
+        if not models and not args.translation_dataset and not args.translations_dir:
+            print("No models discovered. Set MODELS env var or populate hf_cache/hub/.")
+            sys.exit(1)
 
     if models:
         import yaml as _yaml
