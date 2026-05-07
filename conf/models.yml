@@ -1,0 +1,37 @@
+# models.yml — per-model queue and GPU topology configuration.
+#
+# Key:   HuggingFace model ID (must match exactly, including org prefix)
+# Value:
+#   queue:                ClearML queue to dispatch this model's translate step to.
+#                         Must match a queue registered by clearml_agent_setup.sh.
+#   tensor_parallel_size: Number of GPUs vLLM uses for this model.
+#                         Must match the GPU count the target queue's agents hold.
+#
+# If a model is not listed here, the pipeline falls back to --queue (default: gpu)
+# with tensor_parallel_size=1.
+#
+# Queue naming convention (configured in clearml_agent_setup.sh --mode):
+#   gpu-1x   single GPU per task    (--mode 1x: one agent per GPU)
+#   gpu-2x   two GPUs per task      (--mode 2x: one agent per GPU pair)
+#   gpu-4x   four GPUs per task     (--mode 4x: one agent for all GPUs)
+#
+# Examples:
+#   < 48 GB model  → queue: gpu-1x, tensor_parallel_size: 1
+#   < 96 GB model  → queue: gpu-2x, tensor_parallel_size: 2
+#   < 192 GB model → queue: gpu-4x, tensor_parallel_size: 4
+
+tencent/HY-MT1.5-1.8B-FP8:
+  queue: gpu-1x
+  tensor_parallel_size: 1
+
+google/gemma-4-E2B-it:
+  queue: gpu-1x
+  tensor_parallel_size: 1
+
+google/gemma-4-E4B-it:
+  queue: gpu-1x
+  tensor_parallel_size: 1
+
+NiuTrans/LMT-60-4B:
+  queue: gpu-1x
+  tensor_parallel_size: 1

@@ -1,0 +1,26 @@
+# ClearML agent / SDK configuration.
+#
+# Copy to ~/clearml.conf on each machine (server host + every worker) and
+# fill in the three placeholders.  Or run `clearml-init` interactively.
+#
+# IMPORTANT: save as ~/clearml.conf (no dot prefix). ClearML looks there
+# by default.
+#
+# CRITICAL: URLs MUST be wrapped in double quotes because HOCON treats //
+# as a comment delimiter. Without quotes, http://host:port is parsed as
+# http: followed by a comment, causing NameResolutionError.
+
+api {
+    web_server:  "http://CLEARML_HOST:8080"
+    api_server:  "http://CLEARML_HOST:8008"
+    files_server: "http://CLEARML_HOST:8081"
+
+    credentials {
+        access_key: "ACCESS_KEY"
+        secret_key: "SECRET_KEY"
+    }
+}
+
+agent {
+    default_queue: "gpu"
+}

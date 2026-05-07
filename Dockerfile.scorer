@@ -1,0 +1,32 @@
+# Scoring container for score_translations.py
+#
+# Ships xCOMET (Unbabel/XCOMET-XL) + NLI (cross-encoder/nli-deberta-v3-large)
+# and optional packages for LaBSE / BERTScore. Runs on GPU via the NVIDIA
+# container runtime.
+
+FROM pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime
+
+ENV PYTHONUNBUFFERED=1 \
+    HF_HOME=/root/.cache/huggingface \
+    TRANSFORMERS_OFFLINE=0
+
+WORKDIR /app
+
+# Install comet first — its pins can drag torch backwards to 1.13 — then
+# force-reinstall torch 2.4 and the rest on top.
+#
+# transformers is pinned to 4.44.x: newer versions changed XLMRobertaTokenizer
+# internals in a way that breaks comet's XCOMET prediction path with
+# "XLMRobertaTokenizer has no attribute build_inputs_with_special_tokens".
+RUN pip install --no-cache-dir "unbabel-comet==2.2.2" \
+ && pip install --no-cache-dir --upgrade \
+        "torch>=2.4,<2.5" \
+        "transformers>=4.44,<4.45" \
+        sentencepiece \
+        pandas \
+        sentence-transformers \
+        bert-score
+
+# Code is bind-mounted at runtime (see docker-compose-scorer.yml), so edits
+# don't require a rebuild.
+CMD ["python", "score_translations.py"]

@@ -1,0 +1,23 @@
+# datasets.yml — descriptions for JSONL eval files registered as ClearML Datasets.
+#
+# Key:   the filename stem (filename without .jsonl)
+# Value: the description shown in the ClearML UI and stored in dataset metadata
+#
+# Any *.jsonl file found during scanning that has no entry here will prompt
+# for confirmation before registering with a generic description.
+# Add a new entry here before running clearml_register_datasets.py to skip
+# the prompt and register immediately.
+
+mono_sea: >-
+  Southeast Asian monolingual eval set for translation benchmarking
+
+mono_me: >-
+  Middle Eastern monolingual eval set for translation benchmarking
+
+mono_sea_id_slang: >-
+  Indonesian slang-heavy split (Kamus Alay-density filtered) —
+  drives the dual-track xCOMET-ref vs QE comparison
+
+mono_sea_id_formal: >-
+  Indonesian formal-language split (counterpart of mono_sea_id_slang) —
+  baseline for the slang comparison

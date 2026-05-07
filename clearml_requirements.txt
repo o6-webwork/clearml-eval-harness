@@ -1,0 +1,9 @@
+# Dependencies for ClearML task wrappers (orchestration/tasks/).
+# Installed by the ClearML agent into per-task venvs.
+# Does NOT replace the root requirements.txt or the scorer Dockerfile.
+clearml
+openai
+requests
+pandas
+pyyaml
+huggingface_hub

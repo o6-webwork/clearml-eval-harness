@@ -1,0 +1,26 @@
+# Eval source data — sync from canonical host, never commit
+data/*.jsonl
+data/colloquial-indonesian-lexicon.csv
+
+# Model weights and HF cache
+hf_cache/
+
+# Translation and scoring outputs
+results/
+results_*/
+
+# Secrets
+.env
+clearml-server/.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+
+# Editor
+.idea/
+.vscode/
+*.swp

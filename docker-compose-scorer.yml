@@ -1,0 +1,47 @@
+# Scoring stack — runs score_translations.py against every *_translations*.csv
+# under OUTPUT_DIR and writes *_scored.csv next to each input.
+#
+# run_all_evals.py invokes this at the end of the orchestrated run. You can
+# also run it standalone:
+#
+#   OUTPUT_DIR=results_smoke \
+#     docker compose -f docker-compose-scorer.yml run --rm scorer
+#
+# Model weights (xCOMET, NLI) cache to ./hf_cache so subsequent runs skip
+# the download and the cache is shared with the vLLM stack.
+
+services:
+  scorer:
+    build:
+      context: .
+      dockerfile: Dockerfile.scorer
+    image: bench-scorer:latest
+    working_dir: /app
+    volumes:
+      # Repo root is mounted at /app so the container sees score_translations.py,
+      # the data/ folder, and any results_* subdirectory.
+      - .:/app
+      # HF cache shared with the vLLM stack.
+      - ./hf_cache:/root/.cache/huggingface
+    environment:
+      # OUTPUT_DIR resolves inside /app (the container's working dir), so
+      # passing "results_smoke" from the host lands on /app/results_smoke
+      # which is bind-mounted back to orchestration/results_smoke.
+      - OUTPUT_DIR=${OUTPUT_DIR:-/app/results}
+      # rescore_slang.py reads from INPUT_DIR (defaults to OUTPUT_DIR if unset).
+      - INPUT_DIR=${INPUT_DIR:-}
+      - RESCORE_TOP_N=${RESCORE_TOP_N:-50}
+      - RESCORE_MIN_TOKENS=${RESCORE_MIN_TOKENS:-5}
+      - HF_TOKEN=${HF_TOKEN:-}
+      - COMET_BATCH_SIZE=${COMET_BATCH_SIZE:-16}
+      - COMET_FP16=${COMET_FP16:-1}
+      - SCORE_METRICS=${SCORE_METRICS:-}
+      - INPUT_GLOB=${INPUT_GLOB:-}
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

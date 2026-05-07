@@ -1,0 +1,137 @@
+# ClearML self-hosted server for the Tailscale mesh.
+#
+# Runs on ONE machine. Every other box points its clearml.conf at this
+# machine's Tailscale IP/hostname.
+#
+# Quick start:
+#   cd orchestration/clearml-server
+#   cp .env.example .env          # edit CLEARML_HOST to your Tailscale IP
+#   docker compose up -d
+#
+# Web UI:  http://<CLEARML_HOST>:8080
+# API:     http://<CLEARML_HOST>:8008
+# Files:   http://<CLEARML_HOST>:8081
+#
+# Data is persisted in Docker volumes. To wipe and start fresh:
+#   docker compose down -v
+
+services:
+  apiserver:
+    image: allegroai/clearml:latest
+    command: ["apiserver"]
+    restart: unless-stopped
+    depends_on:
+      - redis
+      - mongo
+      - elasticsearch
+    environment:
+      CLEARML_HOST_IP: ${CLEARML_HOST:?Set CLEARML_HOST to your Tailscale IP in .env}
+      CLEARML__apiserver__pre_populate__enabled: "false"
+      CLEARML__services__async_urls_delete__enabled: "true"
+      CLEARML__secure__credentials__apiserver_key: ${CLEARML_API_ACCESS_KEY:-}
+      CLEARML__secure__credentials__apiserver_secret: ${CLEARML_API_SECRET_KEY:-}
+      # --- ADDED DATABASE CONNECTIONS ---
+      CLEARML_ELASTIC_SERVICE_HOST: elasticsearch
+      CLEARML_ELASTIC_SERVICE_PORT: 9200
+      CLEARML_MONGODB_SERVICE_HOST: mongo
+      CLEARML_MONGODB_SERVICE_PORT: 27017
+      CLEARML_REDIS_SERVICE_HOST: redis
+      CLEARML_REDIS_SERVICE_PORT: 6379
+    ports:
+      - "8008:8008"
+    volumes:
+      - clearml_logs:/var/log/clearml
+      - clearml_config:/opt/clearml/config
+    networks:
+      - clearml
+
+  webserver:
+    image: allegroai/clearml:latest
+    command: ["webserver"]
+    restart: unless-stopped
+    depends_on:
+      - apiserver
+    environment:
+      # Pass DB hosts here too just in case it routes requests requiring them
+      CLEARML_ELASTIC_SERVICE_HOST: elasticsearch
+      CLEARML_ELASTIC_SERVICE_PORT: 9200
+      CLEARML_MONGODB_SERVICE_HOST: mongo
+      CLEARML_MONGODB_SERVICE_PORT: 27017
+      CLEARML_REDIS_SERVICE_HOST: redis
+      CLEARML_REDIS_SERVICE_PORT: 6379
+    ports:
+      - "8080:80"
+    networks:
+      - clearml
+
+  fileserver:
+    image: allegroai/clearml:latest
+    command: ["fileserver"]
+    restart: unless-stopped
+    environment:
+      # Fileserver also requires backend communication 
+      CLEARML_ELASTIC_SERVICE_HOST: elasticsearch
+      CLEARML_ELASTIC_SERVICE_PORT: 9200
+      CLEARML_MONGODB_SERVICE_HOST: mongo
+      CLEARML_MONGODB_SERVICE_PORT: 27017
+      CLEARML_REDIS_SERVICE_HOST: redis
+      CLEARML_REDIS_SERVICE_PORT: 6379
+    ports:
+      - "8081:8081"
+    volumes:
+      - clearml_fileserver:/mnt/fileserver
+    networks:
+      - clearml
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - clearml_redis:/data
+    networks:
+      - clearml
+
+  mongo:
+    image: mongo:7.0
+    restart: unless-stopped
+    command: --setParameter internalQueryMaxBlockingSortMemoryUsageBytes=536870912
+    volumes:
+      - clearml_mongo_data:/data/db
+      - clearml_mongo_config:/data/configdb
+    networks:
+      - clearml
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.18
+    restart: unless-stopped
+    environment:
+      ES_JAVA_OPTS: "-Xms2g -Xmx2g"
+      bootstrap.memory_lock: "true"
+      cluster.name: clearml
+      cluster.routing.allocation.node_initial_primaries_recoveries: "500"
+      discovery.type: single-node
+      http.compression_level: "7"
+      node.name: clearml
+      xpack.monitoring.enabled: "false"
+      xpack.security.enabled: "false"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - clearml_elasticsearch:/usr/share/elasticsearch/data
+    networks:
+      - clearml
+
+volumes:
+  clearml_logs:
+  clearml_config:
+  clearml_fileserver:
+  clearml_redis:
+  clearml_mongo_data:
+  clearml_mongo_config:
+  clearml_elasticsearch:
+
+networks:
+  clearml:
+    driver: bridge

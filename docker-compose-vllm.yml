@@ -1,0 +1,52 @@
+# vLLM serving stack, parametrised by $MODEL.
+#
+# run_all_evals.py drives this: it sets MODEL=<hf_id> and `up -d`s the stack,
+# then tears it down before moving to the next model. You can also run it
+# manually for single-model work:
+#
+#   MODEL=google/gemma-4-E2B-it \
+#     docker compose -f docker-compose-vllm.yml up -d
+#   docker compose -f docker-compose-vllm.yml logs -f vllm
+#   docker compose -f docker-compose-vllm.yml down
+#
+# To override vLLM args (quantization, max-model-len, etc.) without editing
+# this file:
+#   MODEL=google/gemma-4-E2B-it VLLM_EXTRA_ARGS="--quantization fp8" \
+#     docker compose -f docker-compose-vllm.yml up -d
+#
+# HF cache is bind-mounted from ./hf_cache so weights persist across
+# container recreations and are shared with the scorer stack.
+
+services:
+  vllm:
+    # `gemma4-cu130` tag — CUDA 13.0 build with vLLM version that handles
+    # recent architectures (gemma4, etc). Change if your host driver needs
+    # a different CUDA build.
+    image: vllm/vllm-openai:gemma4-cu130
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./hf_cache:/root/.cache/huggingface
+    environment:
+      - HF_TOKEN=${HF_TOKEN:-}
+      # Forwarded from the ClearML agent environment so the container sees
+      # only the GPUs assigned to this task. For single-GPU agents this is
+      # a single index (e.g. "2"); for tensor-parallel agents it is a
+      # comma-separated list (e.g. "0,1" or "0,1,2,3").
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
+    command: >
+      --model ${MODEL:-NiuTrans/LMT-60-4B}
+      --dtype auto
+      --max-model-len 4096
+      ${VLLM_EXTRA_ARGS:-}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              # Expose all host GPUs to the container. CUDA_VISIBLE_DEVICES
+              # (forwarded above) limits which GPUs CUDA actually uses, so
+              # single-GPU agents and tensor-parallel agents both work
+              # correctly without separate compose files.
+              count: all
+              capabilities: [gpu]
