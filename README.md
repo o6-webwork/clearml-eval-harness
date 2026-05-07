@@ -759,11 +759,9 @@ curl -s http://localhost:8008/health   # should return {}
 **Tearing down the tunnel** when you are done with the session:
 
 ```bash
-# Kill the SSH processes holding those ports
-kill $(lsof -ti:8008 -ti:8080 -ti:8081)
-
-# Or kill all matching SSH tunnel processes at once
-pkill -f "ssh -fNL"
+# Kill all matching SSH tunnel processes (sudo required if the tunnel was
+# started by a different user or elevated shell)
+sudo pkill -f "ssh -fNL"
 
 # Verify — should return nothing
 lsof -ti:8008
@@ -796,7 +794,7 @@ lsof -ti:8008
 | `nvidia-smi: command not found` or no GPUs in containers (WSL2) | NVIDIA Container Toolkit not installed in WSL2, or Docker Desktop not restarted after install | Re-run the toolkit install from §W3; restart Docker Desktop fully (system tray → Quit, then relaunch) |
 | Workers can SSH to the Windows host but land in PowerShell, not bash | WSL2 default shell not configured | Run the `New-ItemProperty` command from §W5 step 2 in PowerShell as Administrator |
 | `curl http://<host>:8008` from worker returns nothing or times out | Docker's `DOCKER-USER` iptables chain blocks the Tailscale interface even when `ufw` allows it | Set up an SSH tunnel and point `~/clearml.conf` to `localhost` (see §4h) |
-| SSH tunnel ports already in use on next session | `ssh -fNL` forks to background and stays alive until killed | `kill $(lsof -ti:8008 -ti:8080 -ti:8081)` or `pkill -f "ssh -fNL"` |
+| SSH tunnel ports already in use on next session | `ssh -fNL` forks to background and stays alive until killed | `sudo pkill -f "ssh -fNL"` |
 | Tasks appear on **host** instead of worker during a distributed run | Host has GPU-queue daemons running that consume `gpu`/`gpu-1x` tasks | Stop GPU-queue daemons on the host: `pkill -f 'clearml-agent daemon'`; restart only `clearml-agent daemon --queue default --detach` |
 | `clearml_sync_data.sh` fails with "invalid user" or "Permission denied" | `CANONICAL_HOST` set to a bare IP — rsync requires `user@host` | Use `CANONICAL_HOST=<user>@<HOST_TAILSCALE_IP>` |
 | Pipeline dispatches scoring steps to `gpu` queue with no consumer | `--queue` defaulted to `gpu` instead of `gpu-1x` | Pass `--queue gpu-1x` when triggering a distributed run |
