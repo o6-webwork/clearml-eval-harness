@@ -607,6 +607,7 @@ def build_and_run(
     # (argparse sees its defaults, not the original flags, when run by the agent).
     pipe.add_parameter("models_csv", ",".join(models))
     pipe.add_parameter("metrics_csv", ",".join(sorted(metrics)))
+    pipe.add_parameter("output_dir", output_dir)
 
     # --- Translate steps (one per model) ---
     # Skipped entirely when --translation-dataset is supplied (score-only mode).
@@ -764,6 +765,9 @@ def main() -> None:
         _metrics_csv = _get("metrics_csv")
         if _metrics_csv:
             raw_metrics = {m.strip().lower() for m in _metrics_csv.split(",") if m.strip()}
+        _stored_output_dir = _get("output_dir")
+        if _stored_output_dir:
+            args.output_dir = _stored_output_dir
     else:
         models = discover_models()
         if not models and not args.translation_dataset and not args.translations_dir:
