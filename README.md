@@ -37,8 +37,8 @@ git clone https://github.com/o6-webwork/clearml-eval-harness.git ~/Desktop/clear
 cd ~/Desktop/clearml-eval-harness
 cp .env.example .env && $EDITOR .env                  # set HF_TOKEN
 docker compose -f docker-compose-scorer.yml build
-ssh-keygen -t ed25519 && ssh-copy-id <CANONICAL_HOST_IP>
-CANONICAL_HOST=<CANONICAL_HOST_IP> bash clearml_sync_data.sh
+ssh-keygen -t ed25519 && ssh-copy-id <user>@<CANONICAL_HOST_IP>
+CANONICAL_HOST=<user>@<CANONICAL_HOST_IP> bash clearml_sync_data.sh
 cp conf/clearml.conf.template ~/clearml.conf
 $EDITOR ~/clearml.conf                                # same values as host clearml.conf
 bash clearml_agent_setup.sh --mode 1x --start         # or --mode 2x / --mode 4x
@@ -371,20 +371,23 @@ Workers pull the HF cache from the host before their first eval:
 
 ```bash
 # Standard — host has models at hf_cache/ (post-consolidation layout)
-CANONICAL_HOST=<HOST_TAILSCALE_IP> bash clearml_sync_data.sh
+CANONICAL_HOST=<user>@<HOST_TAILSCALE_IP> bash clearml_sync_data.sh
 
 # Pre-consolidation host — models still at ~/Desktop/evals/hf_cache/
-CANONICAL_HOST=<HOST_TAILSCALE_IP> \
+CANONICAL_HOST=<user>@<HOST_TAILSCALE_IP> \
   REMOTE_DATA_DIR=~/Desktop/evals \
   bash clearml_sync_data.sh
 ```
+
+> **`CANONICAL_HOST` must include the username** — rsync uses `user@host` format,
+> not a bare IP. Example: `CANONICAL_HOST=alice@100.64.0.10 bash clearml_sync_data.sh`
 
 rsync is resumable — a dropped SSH connection won't restart a large download
 from zero. Partial syncs when you only need one side:
 
 ```bash
-CANONICAL_HOST=<IP> SYNC_DATA_ONLY=1    bash clearml_sync_data.sh  # JSONLs only
-CANONICAL_HOST=<IP> SYNC_WEIGHTS_ONLY=1 bash clearml_sync_data.sh  # HF cache only
+CANONICAL_HOST=<user>@<IP> SYNC_DATA_ONLY=1    bash clearml_sync_data.sh  # JSONLs only
+CANONICAL_HOST=<user>@<IP> SYNC_WEIGHTS_ONLY=1 bash clearml_sync_data.sh  # HF cache only
 ```
 
 ---
@@ -404,7 +407,7 @@ MODELS=tencent/HY-MT1.5-1.8B-FP8 \
 python clearml_pipeline.py --local
 
 # 3. Distributed — fans out translate + scoring steps to GPU workers
-python clearml_pipeline.py --queue gpu
+python clearml_pipeline.py --queue gpu-1x
 
 # 4. Score only — reuse translations from a prior run, skip re-translating
 python clearml_pipeline.py --local \
@@ -626,12 +629,13 @@ ssh <CANONICAL_HOST_IP> exit    # verify — should log in without a password
 ### 4d. Sync eval data and model weights
 
 ```bash
-CANONICAL_HOST=<CANONICAL_HOST_IP> bash clearml_sync_data.sh
+CANONICAL_HOST=<user>@<CANONICAL_HOST_IP> bash clearml_sync_data.sh
 ```
 
-This pulls both the eval JSONLs and the full HF model cache from the host. See
-§2d for the `REMOTE_DATA_DIR` flag if the host is still on the old
-`~/Desktop/evals` layout.
+`CANONICAL_HOST` must include the SSH username — rsync requires `user@host`,
+not a bare IP. This pulls both the eval JSONLs and the full HF model cache from
+the host. See §2d for the `REMOTE_DATA_DIR` flag if the host is still on the
+old `~/Desktop/evals` layout.
 
 ### 4e. Configure clearml.conf
 
@@ -641,6 +645,17 @@ $EDITOR ~/clearml.conf    # same CLEARML_HOST / ACCESS_KEY / SECRET_KEY as the h
 ```
 
 ### 4f. Install the agent
+
+Before starting agents, export `ORCH_DIR` so that step functions can locate
+repo files regardless of where the agent clones the task:
+
+```bash
+export ORCH_DIR=~/Desktop/clearml-eval-harness
+# Persist across sessions:
+echo 'export ORCH_DIR=~/Desktop/clearml-eval-harness' >> ~/.bashrc
+```
+
+Then start the agents:
 
 ```bash
 # Single-GPU or legacy setup
@@ -653,6 +668,16 @@ bash clearml_agent_setup.sh --mode 4x --start   # one daemon for all GPUs
 ```
 
 The worker should appear in the UI under **Workers & Queues** within seconds.
+
+> **Before triggering a distributed run**: make sure the **host** machine is
+> not running agent daemons that consume the GPU queues (`gpu`, `gpu-1x`, etc.).
+> If the host has its own GPU-queue daemons running, it will pull tasks intended
+> for the worker and run them locally. On the host:
+> ```bash
+> pkill -f 'clearml-agent daemon'
+> pgrep -af 'clearml-agent daemon'        # verify — should return nothing
+> clearml-agent daemon --queue default --detach   # restart controller only
+> ```
 
 ### 4g. Multi-GPU workers
 
@@ -699,6 +724,51 @@ plus one 4-GPU machine running `--mode 4x` (1 × `gpu-4x` slot). Add a
 be automatically dispatched to the right worker while small models fan out
 across the `gpu-1x` fleet.
 
+### 4h. SSH tunnel when ClearML ports are blocked
+
+Docker's iptables rules (`DOCKER-USER` chain) can block inbound connections on
+the ClearML ports (8008/8080/8081) even when `ufw allow in on tailscale0` says
+they are open. Symptoms: `curl http://<host-ip>:8008` from the worker returns
+nothing or times out; `ss -tlnp` on the host shows the ports are listening.
+
+The cleanest fix is to forward the ports over SSH instead of fighting iptables:
+
+```bash
+# On the worker — run once per session (forks to background)
+ssh -fNL 8008:localhost:8008 \
+       -L 8080:localhost:8080 \
+       -L 8081:localhost:8081 \
+       <user>@<HOST_TAILSCALE_IP>
+```
+
+Then update `~/clearml.conf` on the **worker** so all three URLs point to
+`localhost` rather than the host's Tailscale IP:
+
+```
+api_server: "http://localhost:8008"
+web_server: "http://localhost:8080"
+files_server: "http://localhost:8081"
+```
+
+Verify connectivity before starting agents:
+
+```bash
+curl -s http://localhost:8008/health   # should return {}
+```
+
+**Tearing down the tunnel** when you are done with the session:
+
+```bash
+# Kill the SSH processes holding those ports
+kill $(lsof -ti:8008 -ti:8080 -ti:8081)
+
+# Or kill all matching SSH tunnel processes at once
+pkill -f "ssh -fNL"
+
+# Verify — should return nothing
+lsof -ti:8008
+```
+
 ---
 
 ## 5. Troubleshooting
@@ -725,6 +795,11 @@ across the `gpu-1x` fleet.
 | `docker: command not found` inside WSL2 | Docker Desktop WSL2 integration not enabled for the Ubuntu distro | Docker Desktop → **Settings → Resources → WSL Integration** → toggle Ubuntu on → **Apply & Restart** |
 | `nvidia-smi: command not found` or no GPUs in containers (WSL2) | NVIDIA Container Toolkit not installed in WSL2, or Docker Desktop not restarted after install | Re-run the toolkit install from §W3; restart Docker Desktop fully (system tray → Quit, then relaunch) |
 | Workers can SSH to the Windows host but land in PowerShell, not bash | WSL2 default shell not configured | Run the `New-ItemProperty` command from §W5 step 2 in PowerShell as Administrator |
+| `curl http://<host>:8008` from worker returns nothing or times out | Docker's `DOCKER-USER` iptables chain blocks the Tailscale interface even when `ufw` allows it | Set up an SSH tunnel and point `~/clearml.conf` to `localhost` (see §4h) |
+| SSH tunnel ports already in use on next session | `ssh -fNL` forks to background and stays alive until killed | `kill $(lsof -ti:8008 -ti:8080 -ti:8081)` or `pkill -f "ssh -fNL"` |
+| Tasks appear on **host** instead of worker during a distributed run | Host has GPU-queue daemons running that consume `gpu`/`gpu-1x` tasks | Stop GPU-queue daemons on the host: `pkill -f 'clearml-agent daemon'`; restart only `clearml-agent daemon --queue default --detach` |
+| `clearml_sync_data.sh` fails with "invalid user" or "Permission denied" | `CANONICAL_HOST` set to a bare IP — rsync requires `user@host` | Use `CANONICAL_HOST=<user>@<HOST_TAILSCALE_IP>` |
+| Pipeline dispatches scoring steps to `gpu` queue with no consumer | `--queue` defaulted to `gpu` instead of `gpu-1x` | Pass `--queue gpu-1x` when triggering a distributed run |
 
 ---
 
