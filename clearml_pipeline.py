@@ -699,7 +699,7 @@ def build_and_run(
     else:
         print(f"Starting pipeline — {prefix} on queue '{queue}', metrics={sorted(metrics)}.")
         print("Monitor in the ClearML web UI.\n")
-        pipe.start()
+        pipe.start(queue="default")
 
 
 _VALID_METRICS = {"ifeval", "qe", "ref"}
