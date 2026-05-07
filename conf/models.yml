@@ -6,9 +6,13 @@
 #                         Must match a queue registered by clearml_agent_setup.sh.
 #   tensor_parallel_size: Number of GPUs vLLM uses for this model.
 #                         Must match the GPU count the target queue's agents hold.
+#   vllm_extra_args:      Extra CLI flags appended to the vLLM server command,
+#                         merged with --vllm-extra-args from the CLI (model wins
+#                         on duplicate flags). Use for per-model quantization,
+#                         memory limits, etc.
 #
 # If a model is not listed here, the pipeline falls back to --queue (default: gpu)
-# with tensor_parallel_size=1.
+# with tensor_parallel_size=1 and no extra vLLM args.
 #
 # Queue naming convention (configured in clearml_agent_setup.sh --mode):
 #   gpu-1x   single GPU per task    (--mode 1x: one agent per GPU)
@@ -31,7 +35,20 @@ google/gemma-4-E2B-it:
 google/gemma-4-E4B-it:
   queue: gpu-1x
   tensor_parallel_size: 1
+  vllm_extra_args: "--quantization fp8"
 
 NiuTrans/LMT-60-4B:
+  queue: gpu-1x
+  tensor_parallel_size: 1
+
+protoLabsAI/gemma-4-E4B-it-FP8:
+  queue: gpu-1x
+  tensor_parallel_size: 1
+
+Qwen/Qwen3-0.6B:
+  queue: gpu-1x
+  tensor_parallel_size: 1
+
+Qwen/Qwen3.5-0.8B:
   queue: gpu-1x
   tensor_parallel_size: 1

@@ -53,6 +53,8 @@ SCORER_MODEL_IDS = {
     "cross-encoder/nli-deberta-v3-small",
     "sentence-transformers/LaBSE",
     "sentence-transformers/all-MiniLM-L6-v2",
+    # Encoder-only models — not generative, can't be served by vLLM as an LLM.
+    "facebook/xlm-roberta-xl",
 }
 SCORER_ORG_PREFIXES = ("sentence-transformers/", "cross-encoder/", "Unbabel/")
 

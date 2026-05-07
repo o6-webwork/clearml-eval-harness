@@ -1,7 +1,8 @@
-# Host-side deps for run_all_evals.py + batch_translate.py.
+# Host-side deps for run_all_evals.py + batch_translate.py + clearml_pipeline.py.
 # The scoring stack has its own deps baked into Dockerfile.scorer.
 clearml
 pandas
 numpy
 openai
 requests
+pyyaml

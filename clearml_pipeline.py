@@ -614,11 +614,17 @@ def build_and_run(
             safe = model.replace("/", "_").replace(":", "_")
             step_name = f"translate_{safe}"
 
-            # Per-model queue and tensor-parallel size from conf/models.yml;
-            # fall back to CLI --queue and tp=1 when the model is not listed.
+            # Per-model queue, tensor-parallel size, and extra vLLM args from
+            # conf/models.yml; fall back to CLI values when model is not listed.
+            # Model-level vllm_extra_args are appended after the CLI flag so they
+            # win on duplicate flags (e.g. --quantization).
             model_cfg = models_conf.get(model, {})
             step_queue = model_cfg.get("queue", queue) if not local else None
             tp_size = int(model_cfg.get("tensor_parallel_size", 1))
+            model_extra = model_cfg.get("vllm_extra_args", "")
+            merged_extra = " ".join(
+                part for part in (vllm_extra_args, model_extra) if part
+            )
 
             parents = None
             if local and i > 0:
@@ -635,9 +641,12 @@ def build_and_run(
                     "vllm_host": "http://localhost:8000",
                     "output_dir": output_dir,
                     "max_examples": max_examples,
-                    "vllm_extra_args": vllm_extra_args,
+                    "vllm_extra_args": merged_extra,
                     "ready_timeout": 600,
-                    "orch_dir": HERE,
+                    # Local: anchor to this machine's repo root.
+                    # Distributed: pass "" so the step resolves ORCH_DIR from
+                    # the worker's environment (set when starting clearml-agent).
+                    "orch_dir": HERE if local else "",
                     "tensor_parallel_size": tp_size,
                 },
                 parents=parents,
@@ -665,7 +674,7 @@ def build_and_run(
             function_kwargs={
                 "output_dir": output_dir,
                 "scorer_compose": "docker-compose-scorer.yml",
-                "orch_dir": HERE,
+                "orch_dir": HERE if local else "",
                 "translation_dataset_id": translation_dataset_id,
                 "translations_dir": translations_dir,
             },
